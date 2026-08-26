@@ -1,0 +1,14 @@
+<form action="{% url 'polls:search' %}" method="GET">
+  <input type="text" name="q" placeholder="search questions">
+  <button type="submit">Search</button>
+</form>
+
+{% if question_search_results %}
+    <ul>
+    {% for question in question_search_results %}
+      <li><a href="{% url 'polls:detail' question.id %}">{{ question.question_text }}</a></li>
+    {% endfor %}
+    </ul>
+{% else %}
+    <p>No polls are available.</p>
+{% endif %}
