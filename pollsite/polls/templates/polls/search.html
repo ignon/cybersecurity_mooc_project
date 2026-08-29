@@ -3,6 +3,9 @@
   <button type="submit">Search</button>
 </form>
 
+<!-- FLAW: XSS -->
+<p>Results for: {{ query|safe }}</p>
+{# FIX: <p>Results for: {{ query }}</p> #}
 {% if question_search_results %}
     <ul>
     {% for question in question_search_results %}

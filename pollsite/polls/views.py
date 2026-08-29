@@ -1,8 +1,9 @@
 from django.db.models import F
-from django.http import HttpResponseRedirect
+from django.http import HttpResponseRedirect, HttpResponseForbidden
 from django.shortcuts import get_object_or_404, render
 from django.urls import reverse
 from django.views import generic
+from django.views.decorators.csrf import csrf_exempt
 from django.utils import timezone
 
 from .models import Choice, Question
@@ -12,11 +13,23 @@ class SearchView(generic.ListView):
     template_name = "polls/search.html"
     context_object_name = "question_search_results"
 
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context["query"] = self.request.GET.get("q", "")
+        return context
+
     def get_queryset(self):
       q = self.request.GET.get("q", "")
+
+      # sql injection
       results = Question.objects.raw(
           "SELECT * FROM polls_question WHERE question_text LIKE '%%%s%%'" % q
       )
+      # FIX 1:
+      # results = Question.objects.filter(question_text__icontains=q)
+
+      # FIX 2:
+      # results = Question.objects.raw( "SELECT * FROM polls_question WHERE question_text LIKE %s", ["%" + q + "%"])
       return results
 
 
@@ -50,9 +63,26 @@ class ResultsView(generic.DetailView):
     model = Question
     template_name = "polls/results.html"
 
+def delete_question(request, pk):
+    question = get_object_or_404(Question, pk=pk)
+    # Vulnerability: no access control
+    # ACCESS FIX:
+    # if request.session.get("logged_in_as") != question.created_by:
+    #     return HttpResponseForbidden("You can't delete polls created by someone else")
+    question.delete()
+    return HttpResponseRedirect(reverse("polls:index"))
 
-
+# FLAW: CSRF
+# FIX: comment out the line below:
+@csrf_exempt
 def vote(request, question_id):
+    # Vulnerable auth:
+    if not request.COOKIES.get("logged_in_as"):
+        return HttpResponseRedirect(reverse("polls:login"))
+    # AUTH FIX:
+    # if not request.session.get("logged_in_as"):
+    #     return HttpResponseRedirect(reverse("polls:login"))
+
     question = get_object_or_404(Question, pk=question_id)
     try:
         selected_choice = question.choice_set.get(pk=request.POST["choice"])
@@ -73,3 +103,26 @@ def vote(request, question_id):
         # with POST data. This prevents data from being posted twice if a
         # user hits the Back button.
         return HttpResponseRedirect(reverse("polls:results", args=(question.id,)))
+
+
+
+def login_view(request):
+    MOCK_USERS = {"arde": "salasana123", "konna": "dataninja68"}
+    if request.method == "POST":
+        username = request.POST.get("username", "")
+        password = request.POST.get("password", "")
+        if MOCK_USERS.get(username) == password:
+            # Vulnerable auth implementation:
+            response = HttpResponseRedirect(reverse("polls:index"))
+            response.set_cookie("logged_in_as", username)
+
+            # Better auth implementation
+            # (both implementations are uncommented for easier testing)
+            # (consider the actual auth tests as the flaw)
+            request.session["logged_in_as"] = username
+            return response
+        return render(request, "polls/login.html", {"error": "Invalid credentials"})
+    return render(request, "polls/login.html")
+
+
+
